@@ -17,7 +17,7 @@ $(TARGET): $(OBJS)
 
 test: $(TARGET)
 	@echo "Testing PSRS output..."
-	mpirun -np 2 ./psrs 10
+	mpirun -np 3 ./psrs 100
 
 clean:
 	rm -f $(OBJS) $(TARGET)
