@@ -2,181 +2,119 @@
 #include <stdlib.h>
 #include <mpi.h>
 
-#define MAX_ARRAY_SIZE 100000
+/*
+PSRS STEPS
+Step 1: Input data to be sorted of size N is initially portioned among the P processes so that each process gets N/P items to sort. Each process initially sorts its own sub-list of N/P items using sequential quick sort.
+• Step 2: Each process Pi selects P items (we call them regular samples) from its local sorted sub-list at the following local indices: [0, N/P², 2N/P²,…, (P-1)N/P² ] and sends them to process P₀.
+• Step 3: Process P₀ collects the regular samples from the P processes (which includes itself). So it has P² total regular samples. It sorts the regular samples using quick sort, and then chooses (P-1) pivot values at the following indices: [P + P/2-1, 2P + P/2 -1,…, (P-1)P + P/2 -1] and broadcasts the pivots to the P processes.
+• Step 4: Each process Pᵢ, upon receiving the P-1 pivots from process P₀, partitions its local sorted sub-list into P partitions, with the P-1 pivots as separators. Then it keeps ith partition for itself and sends jth partition to process Pⱼ.
+• Step 5: At the end of step 4, each process Pᵢ has (P-1) partitions from other processes together with its own ith partition. It locally merges all P (sorted) partitions to create its final sorted sub-list.
+*/
 
-int cmpfunc(const void *a, const void *b)
-{
+// Function to compare integers (for qsort)
+int compare_integers(const void *a, const void *b) {
     return (*(int *)a - *(int *)b);
 }
 
-void PSRS(int *data, int n, int *pivots, int num_procs, int my_rank, MPI_Comm comm)
-{
-    // print the array
-    printf("Process %d: Unsorted array:\n", my_rank);
-    for (int i = 0; i < n; i++)
-    {
-        printf("%d ", data[i]);
+// Function to perform PSRS algorithm
+void psrs(int *data, int n, int *sorted_data) {
+    // Step 1: Quicksort local data
+    qsort(data, n, sizeof(int), compare_integers);
+
+    // Step 2: Select local regular samples
+    int size, rank;
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    int *samples = (int *)malloc(size * sizeof(int));
+    for (int i = 0; i < size; i++) {
+        samples[i] = data[i * n / (size * size)];
     }
-    printf("\n");
-    printf("Process %d: Starting PSRS\n", my_rank);
-    int local_size = n / num_procs;
-    printf("Process %d: Local size: %d\n", my_rank, local_size);
-    int *local_data = (int *)malloc(sizeof(int) * local_size);
-    MPI_Scatter(data, local_size, MPI_INT, local_data, local_size, MPI_INT, 0, comm);
-
-    // Step 1: Sort local data
-    qsort(local_data, local_size, sizeof(int), (const void *)cmpfunc);
-
-    // Step 2: Select p-1 equally spaced samples from all processes
-    int *samples = (int *)malloc(sizeof(int) * (num_procs - 1));
-    int *all_samples = (int *)malloc(sizeof(int) * num_procs * (num_procs - 1));
-    for (int i = 0; i < num_procs - 1; i++)
-    {
-        samples[i] = local_data[(i + 1) * (local_size / (num_procs))];
+    
+    // Step 3: Gather all samples
+    int *all_samples = NULL;
+    if (rank == 0) {
+        all_samples = (int *)malloc(size * size * sizeof(int));
     }
-    MPI_Gather(samples, num_procs - 1, MPI_INT, all_samples, num_procs - 1, MPI_INT, 0, comm);
-
-    // Step 3: Sort and select pivots
-    if (my_rank == 0)
-    {
-        qsort(all_samples, num_procs * (num_procs - 1), sizeof(int), (const void *)cmpfunc);
-        for (int i = 0; i < num_procs - 1; i++)
-        {
-            pivots[i] = all_samples[(i + 1) * (num_procs - 1)]; // Fix here
+    MPI_Gather(samples, size*size, MPI_INT, all_samples, size*size, MPI_INT, 0, MPI_COMM_WORLD);
+    // sort all_samples using quicksort, choose pivots at [P + P/2-1, 2P + P/2 -1,…, (P-1)P + P/2 -1] and broadcast to all processes
+    if (rank == 0) {
+        qsort(all_samples, size*size, sizeof(int), compare_integers);
+        for (int i = 0; i < size - 1; i++) {
+            sorted_data[i] = all_samples[(i + 1) * size];
         }
+        
     }
-    MPI_Bcast(pivots, num_procs - 1, MPI_INT, 0, comm);
 
-    // Step 4: Partition local data using pivots
-    int *partition_sizes = (int *)malloc(sizeof(int) * num_procs);
-    int *partition_disps = (int *)malloc(sizeof(int) * num_procs);
-    int *send_counts = (int *)malloc(sizeof(int) * num_procs);
-    int *recv_counts = (int *)malloc(sizeof(int) * num_procs);
-    int *recv_disps = (int *)malloc(sizeof(int) * num_procs);
-    int j = 0;
-    for (int i = 0; i < num_procs - 1; i++)
-    {
-        int old_j = j;
-        while (j < local_size && local_data[j] <= pivots[i])
-            j++;
-        send_counts[i] = j - old_j;
-    }
-    send_counts[num_procs - 1] = local_size - j;
-    MPI_Alltoall(send_counts, 1, MPI_INT, recv_counts, 1, MPI_INT, comm);
-    partition_disps[0] = 0;
-    for (int i = 1; i < num_procs; i++)
-    {
-        partition_disps[i] = partition_disps[i - 1] + recv_counts[i - 1];
-    }
-    int total_elements = partition_disps[num_procs - 1] + recv_counts[num_procs - 1];
-    for (int i = 0; i < num_procs; i++)
-    {
-        partition_sizes[i] = total_elements / num_procs;
-    }
-    partition_sizes[num_procs - 1] = total_elements - partition_sizes[num_procs - 1] * (num_procs - 1);
-    recv_disps[0] = 0;
-    for (int i = 1; i < num_procs; i++)
-    {
-        recv_disps[i] = recv_disps[i - 1] + partition_sizes[i - 1];
-    }
-    int *new_local_data = (int *)malloc(sizeof(int) * total_elements);
-    MPI_Alltoallv(local_data, send_counts, partition_disps, MPI_INT, new_local_data, recv_counts, recv_disps, MPI_INT, comm);
+    // Step 4: Select global regular samples
 
-    // Step 5: Sort local data after partitioning
-    qsort(new_local_data, total_elements, sizeof(int), (const void *)cmpfunc);
-
-    // Step 6: Gather sorted data at root process
-    int *recv_counts_gather = (int *)malloc(sizeof(int) * num_procs);
-    int *recv_disps_gather = (int *)malloc(sizeof(int) * num_procs);
-    MPI_Allgather(&partition_sizes[my_rank], 1, MPI_INT, recv_counts_gather, 1, MPI_INT, comm);
-    recv_disps_gather[0] = 0;
-    for (int i = 1; i < num_procs; i++)
-    {
-        recv_disps_gather[i] = recv_disps_gather[i - 1] + recv_counts_gather[i - 1];
-    }
-    if (my_rank == 0)
-    {
-        data = (int *)realloc(data, sizeof(int) * total_elements);
-    }
-    MPI_Gatherv(new_local_data, total_elements, MPI_INT, data, recv_counts_gather, recv_disps_gather, MPI_INT, 0, comm);
-
-    free(local_data);
-    free(samples);
-    free(all_samples);
-    free(partition_sizes);
-    free(partition_disps);
-    free(send_counts);
-    free(recv_counts);
-    free(recv_disps);
-    free(new_local_data);
-    free(recv_counts_gather);
-    free(recv_disps_gather);
-    printf("Process %d: PSRS finished\n", my_rank);
 }
 
-int main(int argc, char *argv[])
-{
-    int num_procs, my_rank;
-    MPI_Init(&argc, &argv);
-    MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
-    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
+int main(int argc, char *argv[]) {
 
-    if (argc != 2)
-    {
-        if (my_rank == 0)
-        {
-            printf("Usage: %s <array_size>\n", argv[0]);
-        }
-        MPI_Finalize();
+    int rank, size;
+    int *data = NULL;
+    int *sorted_data = NULL;
+   
+   if (argc != 2) {
+        printf("Usage: %s <n>\n", argv[0]);
         return 1;
     }
 
-    int array_size;
-    if (my_rank == 0)
-    {
-        array_size = atoi(argv[1]);
-    }
-    MPI_Bcast(&array_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    int n = atoi(argv[1]);
 
-    int *data = (int *)malloc(sizeof(int) * array_size);
-    int *pivots = (int *)malloc(sizeof(int) * (num_procs - 1));
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    // Generate random data only in the root process
-    if (my_rank == 0)
-    {
-        printf("Unsorted array:\n");
-        for (int i = 0; i < array_size; i++)
-        {
-            data[i] = rand() % 1000; // Generate random data
+    if (rank == 0) {
+
+        data = (int *)malloc(n * sizeof(int));
+        // Initialize or read data
+        printf("Unsorted Data: ");
+        for (int i = 0; i < n; i++) {
+            data[i] = rand() % 1000;
             printf("%d ", data[i]);
         }
         printf("\n");
     }
 
-    double start_time, end_time;
-    MPI_Barrier(MPI_COMM_WORLD);
-    start_time = MPI_Wtime();
+    // Broadcast the size of the problem to all processes
+    MPI_Bcast(&n, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-    // Execute PSRS algorithm
-    PSRS(data, array_size, pivots, num_procs, my_rank, MPI_COMM_WORLD);
+    // Allocate memory for scattered data
+    int *scattered_data = (int *)malloc(n / size * sizeof(int));
 
-    MPI_Barrier(MPI_COMM_WORLD);
-    end_time = MPI_Wtime();
+    // Scatter data to each processor
+    MPI_Scatter(data, n / size, MPI_INT, scattered_data, n / size, MPI_INT, 0, MPI_COMM_WORLD);
 
-    if (my_rank == 0)
-    {
-        printf("Sorted array:\n");
-        for (int i = 0; i < array_size; i++)
-        {
-            printf("%d ", data[i]);
+    // Sort scattered data individually on each processor
+    qsort(scattered_data, n / size, sizeof(int), compare_integers);
+
+    // Allocate memory for sorted data on master process
+    if (rank == 0) {
+        sorted_data = (int *)malloc(n * sizeof(int));
+    }
+
+    // Gather sorted data to master process
+    MPI_Gather(scattered_data, n / size, MPI_INT, sorted_data, n / size, MPI_INT, 0, MPI_COMM_WORLD);
+
+    // Merge sorted data on master process
+    if (rank == 0) {
+        // Perform PSRS algorithm on merged sorted data
+        psrs(sorted_data, n, sorted_data);
+
+        // Output sorted data
+        printf("Sorted Data: ");
+        for (int i = 0; i < n; i++) {
+            printf("%d ", sorted_data[i]);
         }
         printf("\n");
 
-        printf("Time taken: %f seconds\n", end_time - start_time);
+        free(data);
+        free(sorted_data);
     }
 
-    free(data);
-    free(pivots);
+    free(scattered_data);
     MPI_Finalize();
     return 0;
 }

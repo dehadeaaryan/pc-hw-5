@@ -1,0 +1,51 @@
+aaryandehade@bizon-workstation:~/parallel-computing/dot$ make test
+./dot 128 256
+Num Blocks: 128, Threads Per Block: 256, CUDA time: 0.000132225 seconds
+CUDA dot product: 7.94094e+06
+CPU time: 0.00154298 seconds
+CPU dot product: 7.94094e+06
+./dot 100 256
+Num Blocks: 100, Threads Per Block: 256, CUDA time: 0.000124067 seconds
+CUDA dot product: 7.92719e+06
+CPU time: 0.00152448 seconds
+CPU dot product: 7.92719e+06
+./dot 256 128
+Num Blocks: 256, Threads Per Block: 128, CUDA time: 0.000159063 seconds
+CUDA dot product: 7.9479e+06
+CPU time: 0.00151392 seconds
+CPU dot product: 7.9479e+06
+./dot 200 128
+Num Blocks: 200, Threads Per Block: 128, CUDA time: 0.000149192 seconds
+CUDA dot product: 7.93259e+06
+CPU time: 0.0015405 seconds
+CPU dot product: 7.93259e+06
+./dot 64 256
+Num Blocks: 64, Threads Per Block: 256, CUDA time: 0.000114663 seconds
+CUDA dot product: 7.91789e+06
+CPU time: 0.005046 seconds
+CPU dot product: 7.91789e+06
+./dot 512 64
+Num Blocks: 512, Threads Per Block: 64, CUDA time: 0.000227638 seconds
+CUDA dot product: 7.93311e+06
+CPU time: 0.00151611 seconds
+CPU dot product: 7.93311e+06
+./dot 32 32
+Num Blocks: 32, Threads Per Block: 32, CUDA time: 0.000124275 seconds
+CUDA dot product: 7.92887e+06
+CPU time: 0.00152396 seconds
+CPU dot product: 7.92887e+06
+./dot 1024 32
+Num Blocks: 1024, Threads Per Block: 32, CUDA time: 0.000414984 seconds
+CUDA dot product: 7.91552e+06
+CPU time: 0.00153838 seconds
+CPU dot product: 7.91552e+06
+./dot 16 2048
+Num Blocks: 16, Threads Per Block: 2048, CUDA time: 8.6708e-05 seconds
+CUDA dot product: 0
+CPU time: 0.00152405 seconds
+CPU dot product: 7.93271e+06
+./dot 2048 16
+Num Blocks: 2048, Threads Per Block: 16, CUDA time: 0.00114207 seconds
+CUDA dot product: 7.93888e+06
+CPU time: 0.00152266 seconds
+CPU dot product: 7.93888e+06

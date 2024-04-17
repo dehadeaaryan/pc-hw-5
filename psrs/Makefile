@@ -15,5 +15,9 @@ $(TARGET): $(OBJS)
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+test: $(TARGET)
+	@echo "Testing PSRS output..."
+	mpirun -np 2 ./psrs 10
+
 clean:
 	rm -f $(OBJS) $(TARGET)
